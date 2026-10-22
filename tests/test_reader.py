@@ -72,7 +72,8 @@ def test_parse_line_too_short_raises():
 
 # ---------- read_ideas ----------
 
-def test_read_ideas_skips_duplicates(tmp_path):
+def test_read_ideas_keeps_duplicates(tmp_path):
+    # Повторы не пропускаются: это будущие «части» (их номер ставит ContentPlan)
     file = tmp_path / "ideas.txt"
     file.write_text(
         "Поняла, что ухоженность — это ещё и регулярность\n"
@@ -81,9 +82,18 @@ def test_read_ideas_skips_duplicates(tmp_path):
         encoding="utf-8",
     )
     ideas, warnings = read_ideas(str(file))
+    assert len(ideas) == 2
+    assert ideas[0].key == ideas[1].key
+    assert warnings == {}
+
+
+def test_read_ideas_warnings_by_line_number(tmp_path):
+    file = tmp_path / "ideas.txt"
+    file.write_text("Вечерний уход за кожей\nкрем\n---\n", encoding="utf-8")
+    ideas, warnings = read_ideas(str(file))
     assert len(ideas) == 1
-    assert len(warnings) == 1
-    assert "повторяет строку 1" in warnings[0]
+    assert list(warnings.keys()) == [2]  # строка 2 — «крем», строка 3 — разделитель, о нём молчим
+    assert "слишком коротко" in warnings[2]
 
 
 def test_read_ideas_line_numbers_count_empty_lines(tmp_path):
@@ -105,6 +115,19 @@ def test_read_ideas_utf8_with_bom(tmp_path):
     file.write_bytes("Вечерний уход за кожей\n".encode("utf-8-sig"))
     ideas, _ = read_ideas(str(file))
     assert ideas[0].text == "Вечерний уход за кожей"  # без невидимого символа BOM в начале
+
+
+def test_read_ideas_rtf_file(tmp_path):
+    # Так выглядит пустой файл, сохранённый в TextEdit на Mac
+    file = tmp_path / "ideas.rtf"
+    file.write_text(
+        "{\\rtf1\\ansi\\ansicpg1251\\cocoartf2761\n"
+        "\\paperw11900\\paperh16840\\margl1440\\margr1440\\vieww28600\\viewh15380\\viewkind0\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(IdeasFileError, match="RTF"):
+        read_ideas(str(file))
 
 
 def test_read_ideas_missing_file():

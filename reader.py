@@ -100,36 +100,36 @@ def read_lines(path: str) -> list[str]:
         )
 
 
-def read_ideas(path: str) -> tuple[list[Idea], list[str]]:
+def read_ideas(path: str) -> tuple[list[Idea], dict[int, str]]:
     """Читает файл с идеями.
 
-    Возвращает два списка:
-    - идеи, которые получилось разобрать;
-    - предупреждения про строки, которые пришлось пропустить.
+    Возвращает:
+    - список идей, которые получилось разобрать;
+    - словарь предупреждений {номер строки: текст} про строки, которые пришлось пропустить.
+
+    Повторы НЕ пропускаются: одинаковая идея — это следующая «часть» (решает storage.py).
     """
     lines = read_lines(path)
 
+    # Файл из TextEdit по умолчанию сохраняется в RTF (текст с оформлением) и начинается с «{\rtf».
+    # Служебные строки RTF нельзя принимать за идеи — просим сохранить обычным текстом.
+    if lines and lines[0].lstrip().startswith("{\\rtf"):
+        raise IdeasFileError(
+            f"«{path}» — файл RTF (текст с оформлением), а нужен обычный текст. "
+            f"В TextEdit: Формат → Конвертировать в простой текст, и сохрани как .txt"
+        )
+
     ideas = []
-    warnings = []
-    seen = {}  # нормализованный текст -> номер строки, где идея встретилась впервые
+    warnings = {}
 
     for line_no, raw_line in enumerate(lines, start=1):
         try:
             idea = parse_line(raw_line, line_no)
         except ValueError as error:
-            warnings.append(str(error))
+            warnings[line_no] = str(error)
             continue
 
-        if idea is None:
-            continue
-
-        if idea.key in seen:
-            warnings.append(
-                f"строка {line_no}: повторяет строку {seen[idea.key]} — пропускаю"
-            )
-            continue
-
-        seen[idea.key] = line_no
-        ideas.append(idea)
+        if idea is not None:
+            ideas.append(idea)
 
     return ideas, warnings
