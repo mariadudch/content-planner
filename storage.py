@@ -147,11 +147,6 @@ def save_plan(plan: ContentPlan, path: Path) -> None:
 
 # ---------- файл с идеями как «входящие» ----------
 
-def is_inside(path: str, folder: Path) -> bool:
-    """Лежит ли файл прямо в этой папке (например, data/ideas.txt лежит в data/)."""
-    return Path(path).resolve().parent == folder.resolve()
-
-
 def clean_inbox(path: str, keep_line_numbers: list[int]) -> None:
     """Оставляет в файле с идеями только строки с этими номерами, остальные удаляет.
 

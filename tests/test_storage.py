@@ -1,13 +1,10 @@
 """Тесты для storage.py. Запуск из папки проекта: pytest"""
 
-from pathlib import Path
-
 from models import ContentUnit
 from reader import parse_line
 from storage import (
     ContentPlan,
     clean_inbox,
-    is_inside,
     load_plan,
     save_plan,
 )
@@ -170,15 +167,3 @@ def test_clean_inbox_everything_processed(tmp_path):
     file.write_text("идея один\nидея два\n", encoding="utf-8")
     clean_inbox(str(file), [])
     assert file.read_text(encoding="utf-8") == ""
-
-
-def test_is_inside(tmp_path):
-    data_dir = tmp_path / "data"
-    data_dir.mkdir()
-    assert is_inside(str(data_dir / "ideas.txt"), data_dir) is True
-    assert is_inside(str(tmp_path / "examples" / "ideas_demo.txt"), data_dir) is False
-
-
-def test_demo_file_is_not_inside_project_data():
-    project = Path(__file__).parent.parent
-    assert is_inside(str(project / "examples" / "ideas_demo.txt"), project / "data") is False
