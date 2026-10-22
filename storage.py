@@ -60,6 +60,7 @@ def plan_to_dict(plan: ContentPlan) -> dict:
                 "format_name": unit.format_name,
                 "platforms": unit.platforms,
                 "matched": unit.matched,
+                "date": unit.date,
             })
         ideas.append({
             "text": idea.text,
@@ -93,6 +94,8 @@ def plan_from_dict(data: dict) -> ContentPlan:
                 format_name=unit["format_name"],
                 platforms=unit["platforms"],
                 matched=unit["matched"],
+                # .get: в памяти, сохранённой до этапа 4, дат ещё не было — считаем «в бэклоге»
+                date=unit.get("date", ""),
             ))
     return plan
 

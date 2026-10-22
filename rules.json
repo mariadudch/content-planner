@@ -62,19 +62,32 @@
 
   "formats": {
     "Рилс": {
-      "platforms": ["Instagram", "Telegram", "TikTok", "VK", "Yappy"]
+      "platforms": ["Instagram", "Telegram", "TikTok", "VK", "Yappy"],
+      "per_week": 5,
+      "per_day": 1
     },
     "Пост-карусель": {
-      "platforms": ["Instagram", "Telegram", "VK"]
+      "platforms": ["Instagram", "Telegram", "VK"],
+      "per_week": 3,
+      "per_day": 1
     },
     "Пост в Telegram": {
-      "platforms": ["Telegram", "Дзен"]
+      "platforms": ["Telegram", "Дзен"],
+      "per_week": 21,
+      "per_day": 3
     },
     "Сторис": {
-      "platforms": ["Instagram", "Telegram"]
+      "platforms": ["Instagram", "Telegram"],
+      "per_day": 2
     },
     "Влог": {
-      "platforms": ["YouTube", "VK", "Дзен"]
+      "platforms": ["YouTube", "VK", "Дзен"],
+      "per_month": 2,
+      "per_day": 1
     }
+  },
+
+  "planning": {
+    "horizon_days": 28
   }
 }

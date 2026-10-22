@@ -16,6 +16,7 @@ from reader import normalize
 
 SHORT_KEY = 2    # сигналы такой длины и короче сравниваются со словом целиком
 MIN_MATCHES = 1  # сколько слов-сигналов должно найтись, чтобы рубрика подошла
+LIMIT_KEYS = ("per_day", "per_week", "per_month")  # какие лимиты бывают у формата (их применяет planner.py)
 
 
 class RulesError(Exception):
@@ -42,9 +43,16 @@ def load_rules(path: str) -> dict:
 
 def check_rules(rules: dict) -> None:
     """Проверяет, что правила заполнены правильно. Если нет — бросает RulesError."""
-    for section in ("rubrics", "no_rubric", "formats"):
+    for section in ("rubrics", "no_rubric", "formats", "planning"):
         if section not in rules:
             raise RulesError(f"в rules.json нет раздела «{section}»")
+
+    for format_name, settings in rules["formats"].items():
+        for limit in LIMIT_KEYS:
+            if limit in settings:
+                check_positive_number(f"формат «{format_name}», {limit}", settings[limit])
+
+    check_positive_number("planning, horizon_days", rules["planning"].get("horizon_days"))
 
     for name, rubric in rules["rubrics"].items():
         keywords = rubric.get("keywords", [])
@@ -56,6 +64,12 @@ def check_rules(rules: dict) -> None:
         check_formats(name, rubric.get("formats", []), rules["formats"])
 
     check_formats("Без рубрики", rules["no_rubric"].get("formats", []), rules["formats"])
+
+
+def check_positive_number(where: str, value) -> None:
+    """Лимиты и горизонт плана должны быть целыми числами от 1: не 0, не "5" в кавычках, не 2.5."""
+    if type(value) is not int or value < 1:
+        raise RulesError(f"в rules.json: {where} — должно быть целое число от 1, а сейчас {value!r}")
 
 
 def check_formats(owner: str, formats: list[str], known_formats: dict) -> None:

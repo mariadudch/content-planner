@@ -89,6 +89,30 @@ def test_save_and_load_keep_everything(tmp_path):
     assert loaded.units[0].platforms == ["Instagram"]
 
 
+def test_save_and_load_keep_dates(tmp_path):
+    path = tmp_path / "state.json"
+    plan = ContentPlan()
+    add_idea(plan, "Мой вечерний уход")
+    plan.units[0].date = "2026-10-24"
+    save_plan(plan, path)
+    loaded, _ = load_plan(path)
+    assert loaded.units[0].date == "2026-10-24"
+
+
+def test_load_old_state_without_dates(tmp_path):
+    # Память, сохранённая на этапе 3, — у единиц ещё нет поля "date"
+    path = tmp_path / "state.json"
+    path.write_text(
+        '{"ideas": [{"text": "Мой уход", "key": "мой уход", "line_no": 1, "urgent": false,'
+        ' "part": 1, "added": "2026-10-22", "units": [{"rubric": "Бьюти", "format_name": "Рилс",'
+        ' "platforms": ["Instagram"], "matched": ["уход"]}]}]}',
+        encoding="utf-8",
+    )
+    plan, warning = load_plan(path)
+    assert warning == ""
+    assert plan.units[0].date == ""  # считается «в бэклоге» — планировщик поставит дату
+
+
 def test_parts_continue_after_reload(tmp_path):
     path = tmp_path / "state.json"
     plan = ContentPlan()

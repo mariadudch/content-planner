@@ -26,10 +26,11 @@ RULES = {
     },
     "no_rubric": {"name": "Без рубрики", "formats": ["Сторис"]},
     "formats": {
-        "Рилс": {"platforms": ["Instagram", "TikTok"]},
-        "Сторис": {"platforms": ["Instagram"]},
+        "Рилс": {"platforms": ["Instagram", "TikTok"], "per_week": 5, "per_day": 1},
+        "Сторис": {"platforms": ["Instagram"], "per_day": 2},
         "Карусель": {"platforms": ["Instagram", "VK"]},
     },
+    "planning": {"horizon_days": 28},
 }
 
 
@@ -158,6 +159,21 @@ def test_check_rules_missing_section():
     bad = json.loads(json.dumps(RULES))
     del bad["no_rubric"]
     with pytest.raises(RulesError, match="no_rubric"):
+        check_rules(bad)
+
+
+@pytest.mark.parametrize("bad_value", [0, -1, "5", 2.5, True, None])
+def test_check_rules_bad_limit(bad_value):
+    bad = json.loads(json.dumps(RULES))
+    bad["formats"]["Рилс"]["per_week"] = bad_value
+    with pytest.raises(RulesError, match="per_week"):
+        check_rules(bad)
+
+
+def test_check_rules_bad_horizon():
+    bad = json.loads(json.dumps(RULES))
+    bad["planning"]["horizon_days"] = 0
+    with pytest.raises(RulesError, match="horizon_days"):
         check_rules(bad)
 
 
