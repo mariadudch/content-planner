@@ -4,9 +4,11 @@
     python main.py add "Нашла классный тинт"   добавить одну идею прямо из терминала
     python main.py show [--days 7]            показать текущий план (ничего не меняет)
     python main.py preview ФАЙЛ               разбор и план для любого файла, ничего не сохраняет (демо)
+    python main.py sync                       отправить план в Google Таблицу
     python main.py --help                     список команд
 
-Память программы — data/state.json, план в виде таблицы — data/plan.csv.
+Память программы — data/state.json, план в виде таблицы — data/plan.csv и лист Google Таблицы
+(если она настроена: data/google.json + data/google_key.json; run и add отправляют план туда сами).
 """
 
 import argparse
@@ -19,6 +21,7 @@ from export import WEEKDAYS, save_csv
 from models import ContentUnit, Idea
 from planner import backlog, schedule, units_by_day
 from reader import IdeasFileError, parse_line, read_ideas
+from sheets import SheetsError, load_settings, upload
 from storage import ContentPlan, clean_inbox, load_plan, save_plan
 
 PROJECT_DIR = Path(__file__).parent
@@ -27,6 +30,8 @@ DATA_DIR = PROJECT_DIR / "data"
 INBOX_PATH = DATA_DIR / "ideas.txt"
 STATE_PATH = DATA_DIR / "state.json"
 CSV_PATH = DATA_DIR / "plan.csv"
+GOOGLE_SETTINGS_PATH = DATA_DIR / "google.json"
+GOOGLE_KEY_PATH = DATA_DIR / "google_key.json"
 
 
 # ---------- печать ----------
@@ -97,7 +102,23 @@ def save_memory(plan: ContentPlan) -> bool:
         return False
     print(f"\nВсего в памяти — идей: {len(plan.ideas)}, единиц контента: {len(plan.units)}.")
     print(f"План в виде таблицы: {CSV_PATH.relative_to(PROJECT_DIR)}")
+    send_to_sheets(plan)
     return True
+
+
+def send_to_sheets(plan: ContentPlan) -> None:
+    """Отправляет план в Google Таблицу, если она настроена. Ошибка здесь не останавливает программу."""
+    try:
+        settings = load_settings(GOOGLE_SETTINGS_PATH)
+        if settings is None:
+            print("Google Таблица не настроена — пропускаю (см. README, раздел «Google Таблица»).")
+            return
+        print("Отправляю план в Google Таблицу...")
+        count = upload(plan, settings, GOOGLE_KEY_PATH)
+    except SheetsError as error:
+        print(f"Google Таблица: {error}. План сохранён в state.json и plan.csv.")
+        return
+    print(f"Google Таблица: записано строк — {count}, лист «{settings['worksheet']}».")
 
 
 def print_warnings(warnings: dict[int, str]) -> None:
@@ -165,6 +186,11 @@ def command_show(rules: dict, days: Optional[int]) -> None:
     print_calendar(plan, today, today + timedelta(days=days - 1))
 
 
+def command_sync() -> None:
+    """sync: отправить текущий план из памяти в Google Таблицу. Даты не ставит."""
+    send_to_sheets(load_memory())
+
+
 def command_preview(rules: dict, path: str) -> None:
     """preview: разбор и план для любого файла — на пустой памяти, ничего не сохраняет."""
     ideas, warnings = read_ideas(path)
@@ -195,7 +221,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     commands = parser.add_subparsers(dest="command", required=True, metavar="команда")
 
-    commands.add_parser("run", help="разобрать data/ideas.txt, поставить даты, сохранить и выгрузить CSV")
+    commands.add_parser("run", help="разобрать data/ideas.txt, поставить даты, сохранить, выгрузить CSV и в Google")
 
     add = commands.add_parser("add", help="добавить одну идею из терминала")
     add.add_argument("text", help="текст идеи в кавычках, например \"Нашла классный тинт\"")
@@ -207,6 +233,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     preview = commands.add_parser("preview", help="разбор и план для любого файла, ничего не сохраняет")
     preview.add_argument("path", help="путь к файлу с идеями, например examples/ideas_demo.txt")
+
+    commands.add_parser("sync", help="отправить план из памяти в Google Таблицу")
 
     return parser
 
@@ -224,6 +252,8 @@ def main(argv: Optional[list[str]] = None) -> None:
             command_show(rules, args.days)
         elif args.command == "preview":
             command_preview(rules, args.path)
+        elif args.command == "sync":
+            command_sync()
     except (RulesError, IdeasFileError) as error:
         print(f"Ошибка: {error}")
 

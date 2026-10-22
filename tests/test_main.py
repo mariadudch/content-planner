@@ -22,6 +22,9 @@ def data_dir(tmp_path, monkeypatch):
     monkeypatch.setattr(main, "STATE_PATH", folder / "state.json")
     monkeypatch.setattr(main, "CSV_PATH", folder / "plan.csv")
     monkeypatch.setattr(main, "PROJECT_DIR", tmp_path)
+    # ВАЖНО: иначе тесты отправляли бы план в твою настоящую Google Таблицу
+    monkeypatch.setattr(main, "GOOGLE_SETTINGS_PATH", folder / "google.json")
+    monkeypatch.setattr(main, "GOOGLE_KEY_PATH", folder / "google_key.json")
     return folder
 
 
@@ -34,6 +37,7 @@ def test_parser_commands():
     assert parser.parse_args(["show", "--days", "7"]).days == 7
     assert parser.parse_args(["show"]).days is None
     assert parser.parse_args(["preview", "examples/ideas_demo.txt"]).path == "examples/ideas_demo.txt"
+    assert parser.parse_args(["sync"]).command == "sync"
 
 
 def test_parser_without_command_exits():
@@ -90,3 +94,19 @@ def test_broken_rules_message(data_dir, monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(main, "RULES_PATH", broken)
     main.main(["show"])
     assert "Ошибка" in capsys.readouterr().out
+
+
+def test_sync_without_google_settings(data_dir, capsys):
+    main.main(["sync"])
+    assert "не настроена" in capsys.readouterr().out
+
+
+def test_sync_with_settings_but_without_key(data_dir, capsys):
+    (data_dir / "google.json").write_text(
+        '{"spreadsheet_url": "https://docs.google.com/spreadsheets/d/abc/edit", "worksheet": "План"}',
+        encoding="utf-8",
+    )
+    main.main(["sync"])
+    out = capsys.readouterr().out
+    assert "нет ключа доступа" in out          # понятная причина
+    assert "сохранён в state.json" in out      # и успокаивающее «ничего не потеряно»
