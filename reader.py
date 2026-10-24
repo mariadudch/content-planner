@@ -54,7 +54,7 @@ def parse_line(raw_line: str, line_no: int) -> Optional[Idea]:
     Возвращает:
     - Idea — если строка нормальная;
     - None — если строка пустая или это разделитель («---», «✨✨✨»): пропускаем молча.
-    Бросает ValueError с понятным текстом, если строка есть, но идеей быть не может.
+    Выводит ValueError с понятным текстом, если строка есть, но идеей быть не может.
     """
     line = raw_line.strip()
     if normalize(line) == "":
@@ -78,8 +78,8 @@ def parse_line(raw_line: str, line_no: int) -> Optional[Idea]:
 def read_lines(path: str) -> list[str]:
     """Читает файл и возвращает список строк.
 
-    Сначала пробует UTF-8 (так сохраняют Mac и телефоны), если не вышло —
-    Windows-1251 (так сохраняет старый Блокнот в Windows).
+    Сначала пробует UTF-8 (для Mac), если не вышло —
+    Windows-1251 (для Windows).
     """
     try:
         with open(path, encoding="utf-8-sig") as file:
