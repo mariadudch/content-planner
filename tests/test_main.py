@@ -5,11 +5,15 @@ monkeypatch — помощник pytest: на время теста подмен
 """
 
 import argparse
+import json
+from datetime import date, timedelta
 
 import pytest
 
 import main
-from storage import load_plan
+from models import ContentUnit
+from reader import parse_line
+from storage import ContentPlan, load_plan, save_plan
 
 
 @pytest.fixture
@@ -25,6 +29,7 @@ def data_dir(tmp_path, monkeypatch):
     # ВАЖНО: иначе тесты отправляли бы план в твою настоящую Google Таблицу
     monkeypatch.setattr(main, "GOOGLE_SETTINGS_PATH", folder / "google.json")
     monkeypatch.setattr(main, "GOOGLE_KEY_PATH", folder / "google_key.json")
+    monkeypatch.setattr(main, "ARCHIVE_PATH", folder / "archive.json")
     return folder
 
 
@@ -110,3 +115,39 @@ def test_sync_with_settings_but_without_key(data_dir, capsys):
     out = capsys.readouterr().out
     assert "нет ключа доступа" in out          # понятная причина
     assert "сохранён в state.json" in out      # и успокаивающее «ничего не потеряно»
+
+
+# ---------- archive (этап 7) ----------
+
+def test_archive_days_minimum():
+    assert main.archive_days("60") == 60
+    with pytest.raises(argparse.ArgumentTypeError, match="минимум"):
+        main.archive_days("10")
+    with pytest.raises(SystemExit):
+        main.build_parser().parse_args(["archive", "--days", "10"])
+    assert main.build_parser().parse_args(["archive"]).days == 60
+
+
+def test_archive_command(data_dir):
+    long_ago = (date.today() - timedelta(days=90)).isoformat()
+    soon = (date.today() + timedelta(days=3)).isoformat()
+    plan = ContentPlan()
+    for text, unit_date in [("Старая идея про уход", long_ago), ("Идея на будущее про тинт", soon)]:
+        idea = parse_line(text, 1)
+        unit = ContentUnit(idea=idea, rubric="Бьюти", format_name="Рилс", platforms=[], matched=[], date=unit_date)
+        plan.add(idea, [unit], "2026-07-01")
+    save_plan(plan, data_dir / "state.json")
+
+    main.main(["archive"])
+
+    plan, _ = load_plan(data_dir / "state.json")
+    assert [idea.text for idea in plan.ideas] == ["Идея на будущее про тинт"]
+    archive = json.loads((data_dir / "archive.json").read_text(encoding="utf-8"))
+    assert [record["text"] for record in archive["ideas"]] == ["Старая идея про уход"]
+    assert (data_dir / "plan.csv").exists()  # таблица обновилась без архивных строк
+
+
+def test_archive_nothing_to_do(data_dir, capsys):
+    main.main(["archive"])
+    assert "Архивировать нечего" in capsys.readouterr().out
+    assert not (data_dir / "archive.json").exists()

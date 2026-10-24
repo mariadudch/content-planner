@@ -1,9 +1,13 @@
 """Тесты для storage.py. Запуск из папки проекта: pytest"""
 
+import json
+
 from models import ContentUnit
 from reader import parse_line
 from storage import (
     ContentPlan,
+    append_to_archive,
+    archive_old,
     clean_inbox,
     load_plan,
     save_plan,
@@ -167,3 +171,91 @@ def test_clean_inbox_everything_processed(tmp_path):
     file.write_text("идея один\nидея два\n", encoding="utf-8")
     clean_inbox(str(file), [])
     assert file.read_text(encoding="utf-8") == ""
+
+
+# ---------- архив (этап 7) ----------
+
+def add_with_dates(plan, text, dates):
+    """Помощник: идея с единицами на указанные даты ("" — бэклог)."""
+    idea = parse_line(text, 1)
+    units = [unit_for(idea) for _ in dates]
+    for unit, unit_date in zip(units, dates):
+        unit.date = unit_date
+    plan.add(idea, units, TODAY)
+    return idea
+
+
+def test_remove_only_this_idea():
+    plan = ContentPlan()
+    first = add_idea(plan, "Мой вечерний уход")
+    second = add_idea(plan, "Мой вечерний уход")  # часть 2 — тот же текст, но другая идея
+    plan.remove(first)
+    assert plan.ideas == [second]
+    assert [unit.idea for unit in plan.units] == [second]
+
+
+def test_archive_only_ideas_fully_in_past():
+    plan = ContentPlan()
+    add_with_dates(plan, "Всё в прошлом", ["2026-07-01", "2026-07-05"])
+    add_with_dates(plan, "Одна публикация впереди", ["2026-07-01", "2026-10-30"])
+    add_with_dates(plan, "Одна в бэклоге", ["2026-07-01", ""])
+
+    records = archive_old(plan, before="2026-08-25")
+
+    assert [record["text"] for record in records] == ["Всё в прошлом"]
+    assert len(records[0]["units"]) == 2  # в архив уходит идея вместе с её единицами
+    assert [idea.text for idea in plan.ideas] == ["Одна публикация впереди", "Одна в бэклоге"]
+    assert len(plan.units) == 4
+
+
+def test_archive_border_date_stays():
+    plan = ContentPlan()
+    add_with_dates(plan, "Ровно на границе", ["2026-08-25"])
+    assert archive_old(plan, before="2026-08-25") == []  # «раньше» — значит строго меньше
+
+
+def test_parts_continue_after_archive():
+    plan = ContentPlan()
+    add_with_dates(plan, "Мой вечерний уход", ["2026-07-01"])
+    add_with_dates(plan, "Мой вечерний уход", ["2026-07-10"])
+    archive_old(plan, before="2026-08-25")
+    assert plan.ideas == []
+    assert plan.archived_parts == {"мой вечерний уход": 2}
+
+    again = add_idea(plan, "Мой вечерний уход")
+    assert again.part == 3  # нумерация не сбилась, хотя части 1 и 2 уже в архиве
+
+
+def test_archived_parts_saved_and_loaded(tmp_path):
+    path = tmp_path / "state.json"
+    plan = ContentPlan()
+    plan.archived_parts = {"мой вечерний уход": 2}
+    save_plan(plan, path)
+    loaded, _ = load_plan(path)
+    assert loaded.archived_parts == {"мой вечерний уход": 2}
+
+
+def test_old_state_without_archived_parts(tmp_path):
+    path = tmp_path / "state.json"
+    path.write_text('{"ideas": []}', encoding="utf-8")  # память до этапа 7
+    plan, warning = load_plan(path)
+    assert warning == ""
+    assert plan.archived_parts == {}
+
+
+def test_append_to_archive_keeps_old_records(tmp_path):
+    path = tmp_path / "archive.json"
+    assert append_to_archive([{"text": "первая"}], path) == ""
+    assert append_to_archive([{"text": "вторая"}], path) == ""
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert [record["text"] for record in data["ideas"]] == ["первая", "вторая"]
+
+
+def test_append_to_broken_archive(tmp_path):
+    path = tmp_path / "archive.json"
+    path.write_text("{ сломано", encoding="utf-8")
+    warning = append_to_archive([{"text": "новая"}], path)
+    assert "повреждён" in warning
+    assert (tmp_path / "archive.broken.json").exists()  # старый архив не потерян
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert [record["text"] for record in data["ideas"]] == ["новая"]

@@ -1,10 +1,11 @@
-"""Точка входа в программу: команды.
+"""Команды
 
     python main.py run                        разобрать data/ideas.txt, поставить даты, сохранить, выгрузить CSV
-    python main.py add "Нашла классный тинт"   добавить одну идею прямо из терминала
+    python main.py add "Нашла классный тинт"   добавить одну идею из терминала
     python main.py show [--days 7]            показать текущий план (ничего не меняет)
     python main.py preview ФАЙЛ               разбор и план для любого файла, ничего не сохраняет (демо)
     python main.py sync                       отправить план в Google Таблицу
+    python main.py archive [--days 60]        перенести давно прошедшие идеи в data/archive.json
     python main.py --help                     список команд
 
 Память программы — data/state.json, план в виде таблицы — data/plan.csv и лист Google Таблицы
@@ -22,7 +23,7 @@ from models import ContentUnit, Idea
 from planner import backlog, schedule, units_by_day
 from reader import IdeasFileError, parse_line, read_ideas
 from sheets import SheetsError, load_settings, upload
-from storage import ContentPlan, clean_inbox, load_plan, save_plan
+from storage import ContentPlan, append_to_archive, archive_old, clean_inbox, load_plan, save_plan
 
 PROJECT_DIR = Path(__file__).parent
 RULES_PATH = PROJECT_DIR / "rules.json"
@@ -32,6 +33,11 @@ STATE_PATH = DATA_DIR / "state.json"
 CSV_PATH = DATA_DIR / "plan.csv"
 GOOGLE_SETTINGS_PATH = DATA_DIR / "google.json"
 GOOGLE_KEY_PATH = DATA_DIR / "google_key.json"
+ARCHIVE_PATH = DATA_DIR / "archive.json"
+
+# Архивировать можно только то, что старше месяца: лимиты «в месяц» и «в неделю» считают
+# публикации с 1-го числа и с понедельника — их нельзя убирать из памяти раньше времени.
+MIN_ARCHIVE_DAYS = 31
 
 
 # ---------- печать ----------
@@ -191,6 +197,35 @@ def command_sync() -> None:
     send_to_sheets(load_memory())
 
 
+def command_archive(days: int) -> None:
+    """archive: перенести в архив идеи, все публикации которых были раньше, чем days дней назад."""
+    plan = load_memory()
+    before = date.today() - timedelta(days=days)
+    records = archive_old(plan, before.isoformat())
+    if not records:
+        print(f"Архивировать нечего: нет идей, у которых все публикации раньше {before:%d.%m.%Y}.")
+        return
+
+    units_count = 0
+    for record in records:
+        units_count += len(record["units"])
+
+    # Сначала дописываем архив, и только потом сохраняем память без этих идей.
+    # Если программа оборвётся между шагами, идея окажется и там и там, но не потеряется.
+    try:
+        warning = append_to_archive(records, ARCHIVE_PATH)
+    except OSError as error:
+        print(f"Ошибка: не получилось записать архив ({error}). Память не трогаю.")
+        return
+    if warning:
+        print(f"Внимание: {warning}")
+
+    print(f"В архив перенесено идей: {len(records)}, единиц контента: {units_count} "
+          f"(все публикации раньше {before:%d.%m.%Y}).")
+    print(f"Архив: {ARCHIVE_PATH.relative_to(PROJECT_DIR)}")
+    save_memory(plan)
+
+
 def command_preview(rules: dict, path: str) -> None:
     """preview: разбор и план для любого файла — на пустой памяти, ничего не сохраняет."""
     ideas, warnings = read_ideas(path)
@@ -211,6 +246,16 @@ def positive_int(text: str) -> int:
         raise argparse.ArgumentTypeError(f"нужно целое число, а не «{text}»")
     if value < 1:
         raise argparse.ArgumentTypeError("нужно число от 1")
+    return value
+
+
+def archive_days(text: str) -> int:
+    """Тип для argparse: сколько дней назад — не меньше MIN_ARCHIVE_DAYS."""
+    value = positive_int(text)
+    if value < MIN_ARCHIVE_DAYS:
+        raise argparse.ArgumentTypeError(
+            f"минимум {MIN_ARCHIVE_DAYS} — иначе собьются лимиты «в месяц» и «в неделю»"
+        )
     return value
 
 
@@ -236,6 +281,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     commands.add_parser("sync", help="отправить план из памяти в Google Таблицу")
 
+    archive = commands.add_parser("archive", help="перенести давно прошедшие идеи в data/archive.json")
+    archive.add_argument(
+        "--days", type=archive_days, default=60,
+        help=f"старше скольких дней (по умолчанию 60, минимум {MIN_ARCHIVE_DAYS})",
+    )
+
     return parser
 
 
@@ -254,6 +305,8 @@ def main(argv: Optional[list[str]] = None) -> None:
             command_preview(rules, args.path)
         elif args.command == "sync":
             command_sync()
+        elif args.command == "archive":
+            command_archive(args.days)
     except (RulesError, IdeasFileError) as error:
         print(f"Ошибка: {error}")
 
